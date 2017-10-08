@@ -2,7 +2,7 @@ require "rubygems"
 require "nokogiri"
 require "open-uri"
 require "fileutils"
-require 'sqlite3'
+require "prawn"
 
 ROOT_FOLDER = "F:/Manga"
 ROOT_URL = "http://raw.senmanga.com"
@@ -12,8 +12,9 @@ def show_menu
     -------------MENU-----------------
     | Chon chuc nang:                |
     | 1. Crawl manga from Sen Manga  |
-    | 2. Convert from images to HTML |
-    | 3. Rename image file           |
+    | 2. Rename image file           |
+    | 3. Convert from images to HTML |
+    | 4. Convert from images to PDF  |
     ----------------------------------
     Chon: "
   # use chomp to remove enter character
@@ -25,16 +26,25 @@ def show_menu
       manga_name = gets.chomp
       crawl_manga manga_name
     when "2"
-      print "------------------ Convert from images to HTML -------------------\n"
-      print "Input manga folder path: "
-      manga_folder_path = gets.chomp
-      convert_to_html manga_folder_path
-    when "3"
       print "--------------------- Rename image file --------------------------\n"
       print "Input manga folder path: "
       # path phai dung / khong duoc dung \
       manga_folder_path = gets.chomp
       rename_image_file manga_folder_path
+    when "3"
+      print "------------------ Convert from images to HTML -------------------\n"
+      print "Input manga folder path: "
+      manga_folder_path = gets.chomp
+      print "Output manga folder path: "
+      output_folder_path = gets.chomp
+      convert_to_html manga_folder_path, output_folder_path
+    when '4'
+      print "------------------ Convert from images to PDF -------------------\n"
+      print "Input manga folder path: "
+      manga_folder_path = gets.chomp
+      print "Output manga folder path: "
+      output_folder_path = gets.chomp
+      convert_to_pdf manga_folder_path, output_folder_path
   end
 end
 
@@ -79,42 +89,44 @@ def crawl_manga manga_name
   end
 end
 
-def convert_to_html manga_folder_path
-  current_dir_path = Dir.pwd
-  p current_dir_path
+def convert_to_html manga_folder_path, output_folder_path
+  FileUtils.makedirs(output_folder_path) unless File.exist?(output_folder_path)
   manga_dir = Dir.open manga_folder_path
   manga_name = File.basename manga_dir
-  p manga_name
-  manga_html_dir_path = "#{current_dir_path}/#{manga_name}"
+  manga_html_dir_path = "#{output_folder_path}/#{manga_name}"
   FileUtils.makedirs(manga_html_dir_path) unless File.exist?(manga_html_dir_path)
-  index_file_content = "<!DOCTYPE html>
-                        <html>
-                        <head>
-                          <title>Mangas</title>
-                          <link rel='stylesheet' type='text/css' href='#{current_dir_path}/custom.css'>
-
-                        </head>
-                        <body>
-                          <h1>Chapter List</h1>
-                          <ul>"
   chapter_dirs = Dir.glob("#{manga_folder_path}/*").select {|f| File.directory? f}
+
+  css_file_content = ' h1 {
+                            text-align: center
+                          }
+
+                          img {
+                            width: 70%;
+                            height: auto;
+                            margin: 0 auto;
+                            display: block;
+                          }'
+  css_file_path = "#{output_folder_path}/custom.css"
+  css_file = File.open("#{css_file_path}", 'w+')
+  css_file.write css_file_content
+  css_file.close
 
   chapter_dirs.each do |dir|
     chapter_name = File.basename dir
-    chapter_path = "#{manga_folder_path}/#{chapter_name}"
-    index_file_content += "<li><a href=\"#{chapter_name}.html\">#{chapter_name}</a></li>"
-    image_files = Dir.glob("#{chapter_path}/*")
+    chapter_dir_path = "#{manga_folder_path}/#{chapter_name}"
+    image_files = Dir.glob("#{chapter_dir_path}/*")
     chapter_file_content = "<!DOCTYPE html>
                           <html>
                           <head>
                             <title>#{chapter_name}</title>
-                            <link rel='stylesheet' type='text/css' href='#{current_dir_path}/custom.css'>
+                            <link rel='stylesheet' type='text/css' href='#{css_file_path}'>
                           </head>
                           <body>
                             <h1>#{chapter_name}</h1>"
     image_files.each do |file|
       file_name = File.basename file
-      file_path = "#{chapter_path}/#{file_name}"
+      file_path = "#{chapter_dir_path}/#{file_name}"
       chapter_file_content += "<img src=\"#{file_path}\">"
     end
     chapter_file_content += ' </body>
@@ -123,12 +135,28 @@ def convert_to_html manga_folder_path
     chapter_file.write chapter_file_content
     chapter_file.close
   end
-  index_file_content += '</ul>
-                      </body>
-                      </html>'
-  index_file = File.open("#{manga_html_dir_path}/index.html", 'w+')
-  index_file.write index_file_content
-  index_file.close
+end
+
+def convert_to_pdf manga_folder_path, output_folder_path
+  FileUtils.makedirs(output_folder_path) unless File.exist?(output_folder_path)
+  manga_dir = Dir.open manga_folder_path
+  manga_name = File.basename manga_dir
+  manga_pdf_dir_path = "#{output_folder_path}/#{manga_name}"
+  FileUtils.makedirs(manga_pdf_dir_path) unless File.exist?(manga_pdf_dir_path)
+  chapter_dirs = Dir.glob("#{manga_folder_path}/*").select {|f| File.directory? f}
+  chapter_dirs.each do |dir|
+    chapter_name = File.basename dir
+    chapter_dir_path = "#{manga_folder_path}/#{chapter_name}"
+    image_files = Dir.glob("#{chapter_dir_path}/*")
+    print "Generating chapter #{chapter_name}.................... \n"
+    Prawn::Document.generate("#{manga_pdf_dir_path}/#{chapter_name}.pdf") do
+      image_files.each do |file|
+        file_name = File.basename file
+        file_path = "#{chapter_dir_path}/#{file_name}"
+        image "#{file_path}", height: 795, position: :center, vposition: :center
+      end
+    end
+  end
 end
 
 def rename_image_file manga_folder_path
